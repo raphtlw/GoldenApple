@@ -1,0 +1,40 @@
+[tools]
+xcbeautify = "latest"
+
+[env]
+PROJECT_PATH = "{{config_root}}/GoldenApple.xcodeproj"
+SCHEME = "GoldenApple"
+DERIVED_DATA_PATH = "{{config_root}}/Derived Data"
+APP_EXECUTABLE_PATH = "{{config_root}}/Derived Data/Build/Products/Debug/GoldenApple.app/Contents/MacOS/GoldenApple"
+
+[tasks.build]
+description = "Build the Debug configuration for this Mac"
+run = '''
+set -o pipefail
+xcodebuild build \
+  -project "$PROJECT_PATH" \
+  -scheme "$SCHEME" \
+  -configuration Debug \
+  -destination "platform=macOS,arch=arm64" \
+  -derivedDataPath "$DERIVED_DATA_PATH" \
+  -allowProvisioningUpdates \
+  | xcbeautify
+'''
+
+[tasks.start]
+description = "Build, then run the app in the foreground with logs in the terminal"
+depends = ["build"]
+raw = true
+env = { OS_ACTIVITY_DT_MODE = "YES" }
+run = 'exec "$APP_EXECUTABLE_PATH"'
+
+[tasks.debug]
+description = "Build, then run the app under LLDB"
+depends = ["build"]
+raw = true
+env = { OS_ACTIVITY_DT_MODE = "YES" }
+run = 'xcrun lldb --one-line "process launch" -- "$APP_EXECUTABLE_PATH"'
+
+[tasks.clean]
+description = "Remove the local build output"
+run = 'rm -rf "$DERIVED_DATA_PATH"'
