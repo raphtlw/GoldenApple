@@ -23,6 +23,11 @@ extension GoldenAppleLauncher {
         try await services.accounts.signInWithDeviceCode(onCode: onCode)
     }
 
+    /// True when `addOfflineAccount(name:)` is allowed. See there.
+    func canAddOfflineAccounts() -> Bool {
+        services.accounts.canAddOfflineAccounts
+    }
+
     /// Release builds need a saved Microsoft account that owns Minecraft. Debug builds do not.
     func addOfflineAccount(name: String) throws -> Account {
         guard services.accounts.canAddOfflineAccounts else {

@@ -59,6 +59,7 @@ GoldenApple/
 │   ├── Java Archives/
 │   └── HTTP Cache.json          ETag and Last-Modified per cached URL
 ├── Accounts.json                account list without secrets
+├── Onboarding.json              onboarding step and entered details, deleted when onboarding finishes
 └── Settings.json                launcher settings
 ```
 
@@ -450,6 +451,7 @@ actor GoldenAppleLauncher {
     func setDefaultAccount(_ account: Account?) throws
     func signInWithMicrosoft() async throws -> Account        // presents ASWebAuthenticationSession on the main actor, anchored to the key window
     func signInWithDeviceCode(onCode: @Sendable (DeviceCode) -> Void) async throws -> Account
+    func canAddOfflineAccounts() -> Bool                       // false in Release builds until a Microsoft account that owns Minecraft is saved
     func addOfflineAccount(name: String) throws -> Account
     func removeAccount(_ account: Account) throws
 
@@ -460,6 +462,8 @@ actor GoldenAppleLauncher {
     func launch(_ instance: Instance, account: Account?, mode: LaunchMode, join: JoinTarget?,
                 events: @escaping @Sendable (LaunchEvent) -> Void,
                 subprogress: consuming Subprogress?) async throws -> Int32
+    func downloadGameFiles(for instance: Instance, status: @escaping @Sendable (String) -> Void,
+                           subprogress: consuming Subprogress?) async throws   // check versions, choose Java, download libraries and assets; no game start
     func stop(_ instance: Instance) async
     func isRunning(_ instance: Instance) -> Bool
 

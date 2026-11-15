@@ -12,10 +12,10 @@ import SwiftUI
                 } else if !model.isReady {
                     ProgressView()
                         .frame(width: 480, height: 320)
-                } else if model.hasCompletedOnboarding {
-                    ContentView()
+                } else if let onboarding = model.onboarding {
+                    OnboardingView(model: onboarding, onFinish: model.completeOnboarding)
                 } else {
-                    OnboardingView(launcher: model.launcher, onFinish: model.completeOnboarding)
+                    ContentView()
                 }
             }
             .task { await model.prepare() }

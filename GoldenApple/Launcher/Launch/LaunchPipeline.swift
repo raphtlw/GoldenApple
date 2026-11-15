@@ -21,7 +21,9 @@ nonisolated struct LaunchPipeline: Sendable {
         static let start = 1
     }
 
-    static let totalProgressCount = Weight.components + Weight.java + Weight.libraries + Weight.assets + Weight.natives + Weight.plainAssets + Weight.start
+    /// Progress units of `downloadFiles`.
+    static let downloadProgressCount = Weight.components + Weight.java + Weight.libraries + Weight.assets
+    static let totalProgressCount = downloadProgressCount + Weight.natives + Weight.plainAssets + Weight.start
 
     let services: LauncherServices
 
@@ -36,25 +38,10 @@ nonisolated struct LaunchPipeline: Sendable {
         log.file = log.openFile(instance.paths.logFile(.latestLaunch))
         defer { log.file?.close() }
 
-        log.status("Checking the versions of \(instance.name)")
-        let components = try services.instances.components(of: instance)
-        _ = try await services.resolver.resolve(components, mode: .check, metadataMode: mode)
-        let profile = try await services.resolver.profile(for: components, metadataMode: mode)
-        guard let mainClass = profile.mainClass.nonEmpty else {
-            throw LauncherError.missingMainClass(instance.name)
-        }
-        progress.complete(count: Weight.components)
-
-        log.status("Choosing Java")
-        let java = try await services.javaSelector.selectJava(
-            for: profile,
-            instance: instance,
-            mode: mode,
-            subprogress: progress.subprogress(assigningCount: Weight.java)
-        )
-        log.launcher("Using Java \(java.version) from \(java.vendor) at \(java.path.path)")
-
-        let assetIndex = try await installGameFiles(for: profile, mode: mode, log: log, progress: progress)
+        let files = try await prepareFiles(for: instance, mode: mode, log: log, progress: progress)
+        let profile = files.profile
+        let java = files.java
+        let assetIndex = files.assetIndex
 
         log.status("Extracting native libraries")
         let natives = instance.paths.natives
@@ -74,7 +61,7 @@ nonisolated struct LaunchPipeline: Sendable {
         let command = LaunchCommandBuilder(paths: services.paths, configuration: services.configuration, libraries: services.libraries).command(for: LaunchCommandInput(
             instance: instance,
             profile: profile,
-            mainClass: mainClass,
+            mainClass: files.mainClass,
             java: java,
             session: request.session,
             join: await resolvedJoin(request.join, log: log),
@@ -88,8 +75,14 @@ nonisolated struct LaunchPipeline: Sendable {
         try Task.checkCancellation()
 
         log.status("Starting the game")
-        let installer = mainClass == LaunchCommandBuilder.forgeWrapperMainClass ? installerMonitor(for: instance, log: log) : nil
+        let installer = files.mainClass == LaunchCommandBuilder.forgeWrapperMainClass ? installerMonitor(for: instance, log: log) : nil
         return try await play(command, instance: instance, installer: installer, game: game, log: log, progress: progress)
+    }
+
+    /// Downloads the versions, Java, libraries and assets the instance needs, without starting the game.
+    @concurrent
+    func downloadFiles(for instance: Instance, log: LaunchLog, progress: ProgressManager) async throws {
+        _ = try await prepareFiles(for: services.instances.current(instance), mode: .online, log: log, progress: progress)
     }
 
     // MARK: Steps
@@ -97,6 +90,37 @@ nonisolated struct LaunchPipeline: Sendable {
     private struct LoadedAssetIndex {
         let reference: AssetIndexReference
         let index: AssetIndex
+    }
+
+    private struct PreparedFiles {
+        let profile: LaunchProfile
+        let mainClass: String
+        let java: JavaInstallation
+        let assetIndex: LoadedAssetIndex?
+    }
+
+    /// Checks the components, chooses Java and installs the game files. Uses `downloadProgressCount` units of `progress`.
+    private func prepareFiles(for instance: Instance, mode: MetadataMode, log: LaunchLog, progress: ProgressManager) async throws -> PreparedFiles {
+        log.status("Checking the versions of \(instance.name)")
+        let components = try services.instances.components(of: instance)
+        _ = try await services.resolver.resolve(components, mode: .check, metadataMode: mode)
+        let profile = try await services.resolver.profile(for: components, metadataMode: mode)
+        guard let mainClass = profile.mainClass.nonEmpty else {
+            throw LauncherError.missingMainClass(instance.name)
+        }
+        progress.complete(count: Weight.components)
+
+        log.status("Choosing Java")
+        let java = try await services.javaSelector.selectJava(
+            for: profile,
+            instance: instance,
+            mode: mode,
+            subprogress: progress.subprogress(assigningCount: Weight.java)
+        )
+        log.launcher("Using Java \(java.version) from \(java.vendor) at \(java.path.path)")
+
+        let assetIndex = try await installGameFiles(for: profile, mode: mode, log: log, progress: progress)
+        return PreparedFiles(profile: profile, mainClass: mainClass, java: java, assetIndex: assetIndex)
     }
 
     /// Online, downloads libraries, natives, Maven files, agents, the game jar, the asset index and objects.

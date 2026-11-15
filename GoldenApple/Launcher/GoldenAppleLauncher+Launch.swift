@@ -24,6 +24,26 @@ extension GoldenAppleLauncher {
         }
     }
 
+    /// Downloads what the instance needs to start, so the first launch does not wait for downloads.
+    /// Checks the versions, picks or downloads Java, and downloads libraries and assets. Does not start the game.
+    /// `status` receives a short text for each phase.
+    func downloadGameFiles(
+        for instance: Instance,
+        status: @escaping @Sendable (String) -> Void,
+        subprogress: consuming Subprogress? = nil
+    ) async throws {
+        guard services.runningGames.game(for: instance.id) == nil else {
+            throw LauncherError.instanceAlreadyRunning(instance.name)
+        }
+        let progress = ProgressManager.start(subprogress, totalCount: LaunchPipeline.downloadProgressCount)
+        let log = LaunchLog(censor: .forLaunchSecrets()) { event in
+            if case .status(let text) = event {
+                status(text)
+            }
+        }
+        try await LaunchPipeline(services: services).downloadFiles(for: instance, log: log, progress: progress)
+    }
+
     /// Stops the launch or the running game of the instance and waits until it has ended.
     func stop(_ instance: Instance) async {
         guard let game = services.runningGames.game(for: instance.id) else {

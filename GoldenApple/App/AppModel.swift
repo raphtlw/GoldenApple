@@ -1,24 +1,32 @@
 import Foundation
 import Observation
 
-/// App-wide state: the launcher and whether onboarding is complete.
-/// The completion flag is stored in the launcher `Settings.json`, so all app data stays in one folder.
+/// App-wide state: the launcher and the onboarding, while it is not complete.
+/// The completion flag is stored in the launcher `Settings.json` and the onboarding progress in `Onboarding.json`,
+/// so all app data stays in one folder.
 @MainActor
 @Observable
 final class AppModel {
     let launcher = GoldenAppleLauncher()
     private(set) var isReady = false
-    private(set) var hasCompletedOnboarding = false
+    /// Set while onboarding is not complete.
+    private(set) var onboarding: OnboardingModel?
     private(set) var startupError: String?
 
-    /// Creates the data folders, loads settings and accounts, and reads the onboarding flag.
+    private var onboardingStore: OnboardingProgressStore {
+        OnboardingProgressStore(file: launcher.paths.onboardingFile)
+    }
+
+    /// Creates the data folders, loads settings and accounts, and continues the onboarding when it is not complete.
     func prepare() async {
         guard !isReady else {
             return
         }
         do {
             try await launcher.prepare()
-            hasCompletedOnboarding = await launcher.settings().onboardingCompleted
+            if await !launcher.settings().onboardingCompleted {
+                onboarding = OnboardingModel(launcher: launcher, store: onboardingStore)
+            }
             isReady = true
         } catch {
             startupError = error.localizedDescription
@@ -26,16 +34,20 @@ final class AppModel {
     }
 
     func completeOnboarding() {
-        setOnboardingCompleted(true)
+        onboarding?.discardProgress()
+        onboarding = nil
+        saveOnboardingCompleted(true)
     }
 
-    /// Shows onboarding again, for example from a debug menu.
+    /// Shows onboarding again from the start, for example from a debug menu.
     func resetOnboarding() {
-        setOnboardingCompleted(false)
+        let store = onboardingStore
+        store.remove()
+        onboarding = OnboardingModel(launcher: launcher, store: store)
+        saveOnboardingCompleted(false)
     }
 
-    private func setOnboardingCompleted(_ completed: Bool) {
-        hasCompletedOnboarding = completed
+    private func saveOnboardingCompleted(_ completed: Bool) {
         Task {
             do {
                 try await launcher.updateSettings { $0.onboardingCompleted = completed }

@@ -22,6 +22,7 @@ nonisolated struct LauncherPaths: Sendable {
     var cache: URL { folder("Cache") }
     var accountsFile: URL { root.appending(path: "Accounts.json") }
     var settingsFile: URL { root.appending(path: "Settings.json") }
+    var onboardingFile: URL { root.appending(path: "Onboarding.json") }
 
     /// Folders that `prepare()` creates.
     var requiredFolders: [URL] {
